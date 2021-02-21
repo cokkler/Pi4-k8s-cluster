@@ -278,6 +278,11 @@ kube-system      pod/kube-scheduler-k8s-master            1/1     Running   0   
 
 以降は必要に応じてKUBECONFIGを環境変数に設定してください
 
+[PC]
+```sh
+export KUBECONFIG=~/.kube/config:~/.kube/admin.conf
+```
+
 # ワーカーノードをマスターノードに繋ぐ
 以降はワーカーノードのみの作業
 
@@ -297,6 +302,21 @@ kubeadm joinコマンド忘れた場合はマスターノードで以下コマ�
 [Raspberry Pi Master]
 ```sh
 kubeadm token create --print-join-command
+```
+
+## 動作確認
+[PC]
+```sh
+# ノード一覧表示
+kubectl get nodes
+```
+
+一覧表示でワーカーノードが登録されてたらOK
+```
+NAME          STATUS   ROLES                  AGE     VERSION
+k8s-master    Ready    control-plane,master   4h14m   v1.20.4
+k8s-worker0   Ready    <none>                 4h6m    v1.20.4
+k8s-worker1   Ready    <none>                 3h57m   v1.20.4
 ```
 
 # corednsを動かすためにflannelを導入
