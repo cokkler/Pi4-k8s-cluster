@@ -15,6 +15,12 @@ Raspberry Pi OS: Raspbian 64bit
 クラスターの土台は https://www.thingiverse.com/thing:1667303 のデータを3Dプリンタで印刷  
 3DプリンタがEasyThreed X1のため、10x10cmに収まるサイズの土台にしました
 
+この土台は半田ごてを使って土台にナットを埋めないといけないので注意  
+使用したナット、ボルト  
+
+ナット: HSB-305040  
+ボルト: FC-0305E (写真はPCR-0306W化粧ネジですが大きすぎたので失敗)
+
 ![pi4-k8s-cluster](k8s-cluster.jpg)
 
 # Raspbian 64bitをSDカードに書き込む
