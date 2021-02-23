@@ -242,12 +242,12 @@ Docker、k8sの設定を3台分繰り返す
 [Raspberry Pi Master]
 ```sh
 kubeadm init \
-  --dry-run \
-  --control-plane-endpoint=${マスターノードマシンのアドレス} \
-  --pod-network-cidr=10.4.0.0/14 \
-  --service-cidr=10.2.0.0/15 \
-  --service-dns-domain "${サービスのドメイン名}"
+--dry-run \
+--pod-network-cidr=10.244.0.0/16 \
+--apiserver-advertise-address ${マスターノードマシンのIPアドレス}
 ```
+
+実行後、エラーが出なければ--dry-runを外して実行する
 
 成功時の出力の末尾 kubeadm join ... の内容をどこかに控えておく  
 ワーカーノードからマスターノードに接続する際のコマンドになります
@@ -268,11 +268,11 @@ KUBECONFIG=~/.kube/config:~/.kube/admin.conf kubectl config use-context kubernet
 KUBECONFIG=~/.kube/config:~/.kube/admin.conf kubectl get all -A
 ```
 
-一覧表示でpodやサービスがひとまず確認できればOK (この時点ではまだcorednsはSTATUS:Pendingのまま進まない)
+一覧表示でpodやサービスがひとまず確認できればOK
 ```
 NAMESPACE        NAME                                     READY   STATUS    RESTARTS   AGE
-kube-system      pod/coredns-74ff55c5b-w2hv5              1/1     Running   0          158m
-kube-system      pod/coredns-74ff55c5b-zfbfk              1/1     Running   0          158m
+kube-system      pod/coredns-74ff55c5b-w2hv5              0/1     Pending   0          158m
+kube-system      pod/coredns-74ff55c5b-zfbfk              0/1     Pending   0          158m
 kube-system      pod/etcd-k8s-master                      1/1     Running   0          158m
 kube-system      pod/kube-apiserver-k8s-master            1/1     Running   0          158m
 kube-system      pod/kube-controller-manager-k8s-master   1/1     Running   0          158m
@@ -280,7 +280,7 @@ kube-system      pod/kube-proxy-8654j                     1/1     Running   0   
 kube-system      pod/kube-proxy-cjccz                     1/1     Running   0          141m
 kube-system      pod/kube-proxy-tt9bg                     1/1     Running   0          158m
 kube-system      pod/kube-scheduler-k8s-master            1/1     Running   0          158m
-```
+``` 
 
 以降は必要に応じてKUBECONFIGを環境変数に設定してください
 
@@ -326,7 +326,7 @@ k8s-worker1   Ready    <none>                 3h57m   v1.20.4
 ```
 
 # corednsを動かすためにflannelを導入
-corednsがPendingのまま動かないので、flannelを導入する
+corednsがPendingのまま動かない場合はflannelを導入する
 
 [PC]
 ```sh
@@ -385,7 +385,97 @@ kubectl create secret generic -n metallb-system memberlist --from-literal=secret
 ## 動作確認
 参考サイト: https://qiita.com/joe_hirata/items/0c4073f2cc39027d1c32
 
-とりあえずnginxイメージでテストを行うべし
+deployment.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        ports:
+        - containerPort: 80
+```
+
+service.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 80 # deployment.yamlのcontainerPortと同値
+```
+
+[PC]
+```sh
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+# pod、serviceが動いてるか確認
+kubectl get all -A | grep nginx
+```
+
+apply後の確認で表示されたexternalIP:5000にブラウザでアクセスし、nginxのページが表示されればOK
+
+# Prometheus Operatorを導入
+Prometheus&Grafana&Alertmanagerというk8s野郎にとって鉄板構成のメトリクスを導入し、k8sクラスタ自体の監視を行います
+
+公式: https://github.com/prometheus-operator/kube-prometheus  
+公式のGetting Startを見ながら進めてもarm64イメージではないためpodが立ち上がらない  
+そのため、自前でコンテナイメージをビルドする必要がある
+
+しかし、諸々含めてやってくれるありがたいセットをgithub上げてくれてる方がいたので、今回はそれをありがたく使わせていただく事に  
+https://github.com/carlosedp/cluster-monitoring
+
+公式のReadme.mdにmaster版はリファクタリング済んでないからオススメしない的な事が書いてたので、stableなバージョンを使いたい  
+cluster-monitoringをダウンロード後、jsonnetfile.json内のversionを書き換える
+
+jsonnetfile.json一部抜粋
+```yaml
+# 公式にk8sバージョンとPrometheus Operatorのバージョンの対応表があるので、それを見て適切なバージョン番号に書き換える
+"version": "master"
+```
+
+PCにgolangのインストールが必要なので、golangをインストールする
+
+[PC]
+```sh
+# Macかつhomebrewの場合の手順 他OSはgolang installでググるべし
+brew install go
+```
+
+用意されているMakefileを使ってPrometheus Operatorを導入する
+
+[PC]
+```sh
+make vendor
+make
+make deploy
+```
+
+何らか問題が発生した場合はteardownで全て消してやり直す
+
+[PC]
+```sh
+make teardown
+```
 
 # プライベートコンテナリポジトリの作成
 現状はDockerHubにコンテナイメージ上げる必要がある  
